@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Sesi login WhatsApp (JANGAN di-push, berisi data sesi login pribadi)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Log
+npm-debug.log*
+*.log
+
+# Environment variables (kalau nanti dipindah ke .env)
+.env
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -19,7 +19,7 @@ const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
 // ---- GANTI SESUAI FIREBASE PROJECT KAMU ----
-const FIREBASE_HOST = 'https://smart-exhaust-fan-f948e-default-rtdb.asia-southeast1.firebasedatabase.app/';
+const FIREBASE_HOST = 'smart-exhaust-fan-f948e-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 const KEYWORDS = ['cek suhu', 'suhu', 'status', 'data'];
 

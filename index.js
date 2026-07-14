@@ -1,42 +1,116 @@
 /*
   Bot WhatsApp untuk query data suhu dari Firebase (Smart Exhaust Fan)
   ------------------------------------------
-  Cara pakai:
-  1. npm install
-  2. Ganti FIREBASE_HOST di bawah dengan URL database Firebase kamu
-     (tanpa https://, tanpa slash di akhir)
-  3. node index.js
-  4. Scan QR code yang muncul di terminal (WhatsApp -> Linked Devices -> Link a Device)
-  5. Kirim pesan "cek suhu" dari nomor WA manapun, bot akan balas otomatis
+  Versi ini menambahkan web server kecil supaya QR code bisa dibuka
+  lewat browser (URL Railway kamu), karena ASCII QR di log Railway
+  susah/gak bisa discan.
 
-  Bot ini TIDAK perlu berada di jaringan yang sama dengan ESP32 lagi,
-  karena datanya diambil dari Firebase (internet), bukan IP lokal.
-  Ini juga yang membuat bot ini bisa di-deploy ke Railway.
+  Cara pakai di Railway:
+  1. Pastikan service di-expose (Settings -> Networking -> Generate Domain)
+  2. Buka https://<url-railway-kamu>.up.railway.app/qr untuk lihat QR
+  3. Scan dari WhatsApp -> Linked Devices -> Link a Device
+  4. Setelah login sukses, halaman /qr otomatis akan menunjukkan status "sudah login"
 */
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const qrcodeTerminal = require('qrcode-terminal');
+const qrcode = require('qrcode'); // untuk generate QR sebagai image/base64
 const axios = require('axios');
+const express = require('express');
 
 // ---- GANTI SESUAI FIREBASE PROJECT KAMU ----
 const FIREBASE_HOST = 'smart-exhaust-fan-f948e-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 const KEYWORDS = ['cek suhu', 'suhu', 'status', 'data'];
 
+// ---- State untuk web server ----
+let lastQr = null;      // menyimpan QR terbaru dalam bentuk data URL (base64 image)
+let isReady = false;    // status apakah bot sudah login & siap
+
+// ---- Setup Express ----
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.send('Bot WhatsApp jalan. Buka /qr untuk scan QR code.');
+});
+
+app.get('/qr', async (req, res) => {
+  if (isReady) {
+    return res.send(`
+      <html>
+        <body style="font-family: sans-serif; text-align:center; margin-top: 50px;">
+          <h2>✅ Bot sudah login dan siap dipakai</h2>
+          <p>Kirim pesan "cek suhu" ke nomor WhatsApp yang terhubung.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  if (!lastQr) {
+    return res.send(`
+      <html>
+        <body style="font-family: sans-serif; text-align:center; margin-top: 50px;">
+          <h2>⏳ Menunggu QR code...</h2>
+          <p>Refresh halaman ini beberapa detik lagi.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  res.send(`
+    <html>
+      <head>
+        <meta http-equiv="refresh" content="20">
+        <title>Scan QR - WA Bot Suhu</title>
+      </head>
+      <body style="font-family: sans-serif; text-align:center; margin-top: 30px;">
+        <h2>📱 Scan QR Code ini dari WhatsApp</h2>
+        <p>WhatsApp &rarr; Linked Devices &rarr; Link a Device</p>
+        <img src="${lastQr}" alt="QR Code" style="width: 300px; height: 300px;" />
+        <p style="color: gray;">Halaman ini refresh otomatis tiap 20 detik (QR berganti otomatis).</p>
+      </body>
+    </html>
+  `);
+});
+
+app.listen(PORT, () => {
+  console.log(`Web server jalan di port ${PORT}. Buka /qr untuk scan QR code.`);
+});
+
+// ---- Setup WhatsApp Client ----
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
-    args: ['--no-sandbox', '--disable-setuid-sandbox'], // wajib untuk jalan di server Linux (Railway)
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage', // penting untuk environment container/Railway
+    ],
   },
 });
 
-client.on('qr', (qr) => {
-  console.log('Scan QR code ini pakai WhatsApp (Linked Devices):');
-  qrcode.generate(qr, { small: true });
+client.on('qr', async (qr) => {
+  console.log('QR code baru diterima, buka /qr di browser untuk scan.');
+  // tetap tampilkan di log sebagai fallback
+  qrcodeTerminal.generate(qr, { small: true });
+
+  try {
+    lastQr = await qrcode.toDataURL(qr);
+  } catch (err) {
+    console.error('Gagal generate QR image:', err.message);
+  }
 });
 
 client.on('ready', () => {
+  isReady = true;
+  lastQr = null;
   console.log('Bot WhatsApp siap! Kirim pesan "cek suhu" untuk tes.');
+});
+
+client.on('disconnected', (reason) => {
+  isReady = false;
+  console.log('Bot terputus dari WhatsApp:', reason);
 });
 
 client.on('message', async (message) => {
